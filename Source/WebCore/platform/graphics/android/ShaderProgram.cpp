@@ -273,9 +273,10 @@ void ShaderProgram::resetBlending()
 
 void ShaderProgram::setBlendingState(bool enableBlending)
 {
+#if 0
     if (enableBlending == m_blendingEnabled)
         return;
-
+#endif
     if (enableBlending)
         glEnable(GL_BLEND);
     else
