@@ -95,6 +95,20 @@ PassRefPtr<Image> ImageBuffer::copyImage() const
     return image;
 }
 
+PassRefPtr<Image> ImageBuffer::wrapImage() const
+{
+    ASSERT(context());
+
+    SkCanvas* canvas = context()->platformContext()->mCanvas;
+    SkDevice* device = canvas->getDevice();
+    const SkBitmap& orig = device->accessBitmap(false);
+
+    SkBitmapRef* ref = new SkBitmapRef(orig);
+    RefPtr<Image> image = BitmapImage::create(ref, 0);
+    ref->unref();
+    return image;
+}
+
 void ImageBuffer::clip(GraphicsContext* context, const FloatRect& rect) const
 {
     SkDebugf("xxxxxxxxxxxxxxxxxx clip not implemented\n");
@@ -102,7 +116,7 @@ void ImageBuffer::clip(GraphicsContext* context, const FloatRect& rect) const
 
 void ImageBuffer::draw(GraphicsContext* context, ColorSpace styleColorSpace, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator op, bool useLowQualityScale)
 {
-    RefPtr<Image> imageCopy = copyImage();
+    RefPtr<Image> imageCopy = wrapImage();
     context->drawImage(imageCopy.get(), styleColorSpace, destRect, srcRect, op, useLowQualityScale);
 }
 
