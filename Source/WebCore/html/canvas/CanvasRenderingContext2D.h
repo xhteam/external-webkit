@@ -223,8 +223,12 @@ public:
 
     virtual void paintRenderingResultsToCanvas();
 
-#if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING)
+#if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING) || defined(USE_CANVAS_LAYER)
     virtual PlatformLayer* platformLayer() const;
+#endif
+
+#if defined(USE_CANVAS_LAYER)
+	virtual void invalidateView();
 #endif
 
 private:

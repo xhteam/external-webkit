@@ -77,6 +77,54 @@ bool ImageBuffer::drawsUsingCopy() const
     return true;
 }
 
+#if defined(USE_CANVAS_LAYER)
+// copy bits from ImageBuffer to dest buffer: 32-bits per pixel
+void ImageBuffer::copyImageData(void *dst, int rowBytes, int width, int height) const
+{
+    ASSERT(context());
+    ASSERT(dst);
+
+    SkCanvas* canvas     = context()->platformContext()->mCanvas;
+    SkDevice* device     = canvas->getDevice();
+    const SkBitmap& orig = device->accessBitmap(false);
+
+    int src_rowbytes = orig.rowBytes();
+    int src_width    = orig.width();
+    int src_height   = orig.height();
+    int src_fmt      = orig.config();
+    void *src_bits   = orig.getPixels();
+
+    ASSERT(src_fmt == SkBitmap::kARGB_8888_Config); // FIXME!
+
+/*
+    android_printLog(ANDROID_LOG_ERROR, "WebKit", "---------copyImageData: %dx%d -> %dx%d\n",
+        src_width,
+        src_height,
+        width,
+        height);
+*/
+
+    if(src_bits != NULL)
+    {
+        if(src_width < width)
+            width = src_width;
+        if(src_height < height)
+            height = src_height;
+
+        int i;
+        unsigned char *pDst = (unsigned char *)dst;
+        unsigned char *pSrc = (unsigned char *)src_bits;
+
+        for(i=0; i<height; i++)
+        {
+            memcpy(pDst, pSrc, width * 4);
+            pDst += rowBytes;
+            pSrc += src_rowbytes;
+        }
+    }
+}
+#endif
+
 PassRefPtr<Image> ImageBuffer::copyImage() const
 {
     ASSERT(context());

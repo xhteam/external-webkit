@@ -105,6 +105,9 @@ public:
 
     virtual void setContentsToImage(Image*);
     virtual void setContentsToMedia(PlatformLayer*);
+#if defined(USE_CANVAS_LAYER)
+    virtual void setContentsToCanvas(PlatformLayer*);
+#endif
     virtual PlatformLayer* platformLayer() const;
 
     void pauseDisplay(bool state);

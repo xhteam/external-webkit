@@ -279,6 +279,9 @@ public:
 
     virtual bool isMedia() const { return false; }
     virtual bool isVideo() const { return false; }
+#if defined(USE_CANVAS_LAYER)
+	virtual bool isCanvas() const { return false; }
+#endif
 
     RenderLayer* owningLayer() const { return m_owningLayer; }
 
@@ -298,6 +301,11 @@ public:
     // complex is needed.
     bool updateWithTree(LayerAndroid*);
     virtual bool updateWithLayer(LayerAndroid*);
+
+#if defined(USE_CANVAS_LAYER)
+	// A sync point between layer painting thread and compositing thread
+    virtual void commitLayer();
+#endif
 
     int type() { return m_type; }
 

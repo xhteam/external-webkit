@@ -32,6 +32,21 @@
 #include "HTMLElement.h"
 #include "IntSize.h"
 
+#if defined(USE_CANVAS_LAYER)
+#include "GraphicsLayer.h"
+#include "ui/GraphicBuffer.h"
+#include <utils/RefBase.h>
+
+// defined by command line
+//#define GL_GLEXT_PROTOTYPES
+//#define EGL_EGLEXT_PROTOTYPES
+
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#endif
+
 #if PLATFORM(CHROMIUM) || PLATFORM(QT)
 #define DefaultInterpolationQuality InterpolationMedium
 #elif USE(CG)
@@ -144,6 +159,15 @@ public:
     }
 #endif
 
+#if defined(USE_CANVAS_LAYER)
+	PlatformLayer* platformLayer() const;
+	bool createTexture();
+	void deleteTexture();
+	void commitLayer();
+	GLuint getTexture() { return m_textureId; }
+	EGLImageKHR getEglImage() { return m_eglImage; }
+#endif
+
 private:
     HTMLCanvasElement(const QualifiedName&, Document*);
 
@@ -177,6 +201,13 @@ private:
     
     mutable RefPtr<Image> m_presentedImage;
     mutable RefPtr<Image> m_copiedImage; // FIXME: This is temporary for platforms that have to copy the image buffer to render (and for CSSCanvasValue).
+
+#if defined(USE_CANVAS_LAYER)
+	LayerAndroid* m_canvasLayer; // CanvasLayerAndroid
+	android::sp<android::GraphicBuffer> m_graphicBuffer;
+	EGLImageKHR m_eglImage;
+	GLuint m_textureId;
+#endif
 };
 
 } //namespace

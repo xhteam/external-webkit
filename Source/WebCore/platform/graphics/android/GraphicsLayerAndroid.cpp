@@ -897,6 +897,37 @@ void GraphicsLayerAndroid::setContentsToMedia(PlatformLayer* mediaLayer)
     }
 }
 
+#if defined(USE_CANVAS_LAYER)
+void GraphicsLayerAndroid::setContentsToCanvas(PlatformLayer* mediaLayer)
+{
+    // Only fullscreen video on Android, so media doesn't get it's own layer.
+    // We might still have other layers though.
+    if (m_contentLayer != mediaLayer && mediaLayer) {
+
+        // TODO add a copy method to LayerAndroid to sync everything
+        // copy data from the original content layer to the new one
+        mediaLayer->setPosition(m_contentLayer->getPosition().fX,
+                                m_contentLayer->getPosition().fY);
+        mediaLayer->setSize(m_contentLayer->getWidth(), m_contentLayer->getHeight());
+        mediaLayer->setDrawTransform(*m_contentLayer->drawTransform());
+
+        mediaLayer->ref();
+        m_contentLayer->unref();
+        m_contentLayer = mediaLayer;
+
+        // If the parent exists then notify it to re-sync it's children
+        if (m_parent) {
+            GraphicsLayerAndroid* parent = static_cast<GraphicsLayerAndroid*>(m_parent);
+            parent->m_needsSyncChildren = true;
+        }
+        m_needsSyncChildren = true;
+
+        setNeedsDisplay();
+        askForSync();
+    }
+}
+#endif
+
 PlatformLayer* GraphicsLayerAndroid::platformLayer() const
 {
     LOG("platformLayer");

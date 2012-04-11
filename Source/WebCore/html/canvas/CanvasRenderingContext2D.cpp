@@ -66,15 +66,21 @@
 #include "FrameView.h"
 #include "GraphicsContext3D.h"
 #include "SharedGraphicsContext3D.h"
+#endif
+
 #if USE(ACCELERATED_COMPOSITING)
 #include "RenderLayer.h"
-#endif
 #endif
 
 #include <wtf/ByteArray.h>
 #include <wtf/MathExtras.h>
 #include <wtf/OwnPtr.h>
 #include <wtf/UnusedParam.h>
+
+#if defined(USE_CANVAS_LAYER)
+#include "RenderView.h"
+#include "WebViewCore.h"
+#endif
 
 using namespace std;
 
@@ -154,6 +160,8 @@ bool CanvasRenderingContext2D::isAccelerated() const
     return buffer ? buffer->isAccelerated() : false;
 #elif ENABLE(ACCELERATED_2D_CANVAS)
     return m_context3D;
+#elif defined(USE_CANVAS_LAYER)
+    return true;
 #else
     return false;
 #endif
@@ -164,6 +172,8 @@ bool CanvasRenderingContext2D::paintsIntoCanvasBuffer() const
 #if ENABLE(ACCELERATED_2D_CANVAS)
     if (m_context3D)
         return m_context3D->paintsIntoCanvasBuffer();
+#elif defined(USE_CANVAS_LAYER)
+    return false; // disable HTMLCanvasElement::paint
 #endif
     return true;
 }
@@ -1557,29 +1567,33 @@ void CanvasRenderingContext2D::didDraw(const FloatRect& r, unsigned options)
     if (!state().m_invertibleCTM)
         return;
 
+    bool dirtyRectCalculated = false;
     FloatRect dirtyRect = r;
-    if (options & CanvasDidDrawApplyTransform) {
-        AffineTransform ctm = state().m_transform;
-        dirtyRect = ctm.mapRect(r);
-    }
-
-    if (options & CanvasDidDrawApplyShadow && alphaChannel(state().m_shadowColor)) {
-        // The shadow gets applied after transformation
-        FloatRect shadowRect(dirtyRect);
-        shadowRect.move(state().m_shadowOffset);
-        shadowRect.inflate(state().m_shadowBlur);
-        dirtyRect.unite(shadowRect);
-    }
-
-    if (options & CanvasDidDrawApplyClip) {
-        // FIXME: apply the current clip to the rectangle. Unfortunately we can't get the clip
-        // back out of the GraphicsContext, so to take clip into account for incremental painting,
-        // we'd have to keep the clip path around.
-    }
 
 #if ENABLE(ACCELERATED_2D_CANVAS)
-    if (isAccelerated())
+    if (isAccelerated()) {
+        if (options & CanvasDidDrawApplyTransform) {
+            AffineTransform ctm = state().m_transform;
+            dirtyRect = ctm.mapRect(r);
+        }
+
+        if (options & CanvasDidDrawApplyShadow && alphaChannel(state().m_shadowColor)) {
+            // The shadow gets applied after transformation
+            FloatRect shadowRect(dirtyRect);
+            shadowRect.move(state().m_shadowOffset);
+            shadowRect.inflate(state().m_shadowBlur);
+            dirtyRect.unite(shadowRect);
+        }
+
+        if (options & CanvasDidDrawApplyClip) {
+            // FIXME: apply the current clip to the rectangle. Unfortunately we can't get the clip
+            // back out of the GraphicsContext, so to take clip into account for incremental painting,
+            // we'd have to keep the clip path around.
+        }
+        dirtyRectCalculated = true;
+
         drawingContext()->markDirtyRect(enclosingIntRect(dirtyRect));
+    }
 #endif
 #if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING)
     // If we are drawing to hardware and we have a composited layer, just call contentChanged().
@@ -1587,9 +1601,75 @@ void CanvasRenderingContext2D::didDraw(const FloatRect& r, unsigned options)
     if (isAccelerated() && renderBox && renderBox->hasLayer() && renderBox->layer()->hasAcceleratedCompositing())
         renderBox->layer()->contentChanged(RenderLayer::CanvasChanged);
     else
+#elif defined(USE_CANVAS_LAYER)
+    // If we are drawing to hardware and we have a composited layer, just call contentChanged().
+    RenderBox* renderBox = canvas()->renderBox();
+    if (isAccelerated() && renderBox && renderBox->hasLayer() && renderBox->layer()->hasAcceleratedCompositing()) {
+        renderBox->layer()->contentChanged(RenderLayer::CanvasChanged);
+        // invalidate
+        HTMLCanvasElement *pElement = canvas();
+        RenderView* view;
+        if (renderBox->isRooted(&view)) {
+            FrameView *frameView = view->frameView(); // FIXME! check document()->ownerElement()? IFrame ...
+            if(frameView != NULL) {
+                //frameView->invalidateRect(dirtyRect);
+                android::WebViewCore::getWebViewCore(frameView)->layersCommit();
+            }
+        }
+    }
+    else
 #endif
+    {
+        if(!dirtyRectCalculated) {
+            if (options & CanvasDidDrawApplyTransform) {
+                AffineTransform ctm = state().m_transform;
+                dirtyRect = ctm.mapRect(r);
+            }
+
+            if (options & CanvasDidDrawApplyShadow && alphaChannel(state().m_shadowColor)) {
+                // The shadow gets applied after transformation
+                FloatRect shadowRect(dirtyRect);
+                shadowRect.move(state().m_shadowOffset);
+                shadowRect.inflate(state().m_shadowBlur);
+                dirtyRect.unite(shadowRect);
+            }
+
+            if (options & CanvasDidDrawApplyClip) {
+                // FIXME: apply the current clip to the rectangle. Unfortunately we can't get the clip
+                // back out of the GraphicsContext, so to take clip into account for incremental painting,
+                // we'd have to keep the clip path around.
+            }
+        }
         canvas()->didDraw(dirtyRect);
+    }
 }
+
+#if defined(USE_CANVAS_LAYER)
+void CanvasRenderingContext2D::invalidateView()
+{
+    RenderBox* renderBox = canvas()->renderBox();
+    RenderView* view;
+
+    if (renderBox->isRooted(&view)) {
+        FrameView *frameView = view->frameView(); // FIXME! check document()->ownerElement()? IFrame ...
+        if(frameView != NULL) {
+            //frameView->invalidateRect(dirtyRect);
+            IntPoint  pt;;
+            IntSize   sz = renderBox->size();
+            FloatPoint absolutePoint = renderBox->localToAbsolute();
+            pt.setX((int)absolutePoint.x());
+            pt.setY((int)absolutePoint.y());
+
+            IntRect   rcCanvas(pt, sz);
+
+//            android_printLog(ANDROID_LOG_ERROR, "WebKit", "invalidateView, rect(%d, %d, %d, %d)\n",
+//                 rcCanvas.x(), rcCanvas.y(), rcCanvas.width(), rcCanvas.height());
+
+            android::WebViewCore::getWebViewCore(frameView)->viewInvalidate(rcCanvas); // zoom scale is considered in WebView.java; here just use document size
+        }
+    }
+}
+#endif
 
 GraphicsContext* CanvasRenderingContext2D::drawingContext() const
 {
@@ -1976,11 +2056,14 @@ void CanvasRenderingContext2D::paintRenderingResultsToCanvas()
 #endif
 }
 
-#if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING)
+#if ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING) || defined(USE_CANVAS_LAYER)
 PlatformLayer* CanvasRenderingContext2D::platformLayer() const
 {
+#if defined(USE_CANVAS_LAYER)
+    return canvas()->platformLayer();
+#else
     return m_drawingBuffer ? m_drawingBuffer->platformLayer() : 0;
+#endif
 }
 #endif
-
 } // namespace WebCore

@@ -79,13 +79,16 @@ namespace WebCore {
         int height() const { return m_size.height(); }
         
         size_t dataSize() const;
-        
+		
         GraphicsContext* context() const;
 
         bool isAccelerated() const { return m_accelerateRendering; }
         bool drawsUsingCopy() const; // If the image buffer has to render using a copied image, it will return true.
         PassRefPtr<Image> copyImage() const; // Return a new image that is a copy of the buffer.
         PassRefPtr<Image> wrapImage() const; // Return a image that wrappers up the buffer
+#if defined(USE_CANVAS_LAYER)
+        void copyImageData(void *dst, int rowBytes, int width, int height) const;
+#endif
 
         PassRefPtr<ByteArray> getUnmultipliedImageData(const IntRect&) const;
         PassRefPtr<ByteArray> getPremultipliedImageData(const IntRect&) const;

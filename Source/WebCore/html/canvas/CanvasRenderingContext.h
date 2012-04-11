@@ -55,13 +55,20 @@ public:
 
     virtual bool is2d() const { return false; }
     virtual bool is3d() const { return false; }
-    virtual bool isAccelerated() const { return false; }
-
+#if defined(USE_CANVAS_LAYER)
+    virtual bool isAccelerated() const { return true; }
+#else
+	virtual bool isAccelerated() const { return false; }
+#endif
     virtual void paintRenderingResultsToCanvas() {}
     virtual bool paintsIntoCanvasBuffer() const { return true; }
 
 #if USE(ACCELERATED_COMPOSITING)
     virtual PlatformLayer* platformLayer() const { return 0; }
+#endif
+
+#if defined(USE_CANVAS_LAYER)
+	virtual void invalidateView() {};
 #endif
 
 protected:
