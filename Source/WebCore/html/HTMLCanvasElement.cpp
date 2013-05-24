@@ -48,6 +48,9 @@
 #include "Settings.h"
 #include <math.h>
 #include <stdio.h>
+#if defined(USE_CANVAS_LAYER)
+#include "CanvasLayerAndroid.h"
+#endif
 
 #if USE(JSC)
 #include <runtime/JSLock.h>
@@ -94,8 +97,15 @@ HTMLCanvasElement::HTMLCanvasElement(const QualifiedName& tagName, Document* doc
 #endif
     , m_originClean(true)
     , m_hasCreatedImageBuffer(false)
+#if defined(USE_CANVAS_LAYER)
+    , m_canvasLayer(new CanvasLayerAndroid(this))
+#endif
 {
     ASSERT(hasTagName(canvasTag));
+#if defined(USE_CANVAS_LAYER)
+    m_textureId = 0;
+    m_eglImage = EGL_NO_IMAGE_KHR;
+#endif
 }
 
 PassRefPtr<HTMLCanvasElement> HTMLCanvasElement::create(Document* document)
@@ -113,6 +123,11 @@ HTMLCanvasElement::~HTMLCanvasElement()
     HashSet<CanvasObserver*>::iterator end = m_observers.end();
     for (HashSet<CanvasObserver*>::iterator it = m_observers.begin(); it != end; ++it)
         (*it)->canvasDestroyed(this);
+
+#if defined(USE_CANVAS_LAYER)
+    m_canvasLayer->unref();
+    deleteTexture();
+#endif
 }
 
 void HTMLCanvasElement::parseMappedAttribute(Attribute* attr)
@@ -175,7 +190,7 @@ CanvasRenderingContext* HTMLCanvasElement::getContext(const String& type, Canvas
                 usesDashbardCompatibilityMode = settings->usesDashboardBackwardCompatibilityMode();
 #endif
             m_context = adoptPtr(new CanvasRenderingContext2D(this, document()->inQuirksMode(), usesDashbardCompatibilityMode));
-#if USE(IOSURFACE_CANVAS_BACKING_STORE) || (ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING))
+#if USE(IOSURFACE_CANVAS_BACKING_STORE) || (ENABLE(ACCELERATED_2D_CANVAS) && USE(ACCELERATED_COMPOSITING)) || defined(USE_CANVAS_LAYER)
             if (m_context) {
                 // Need to make sure a RenderLayer and compositing layer get created for the Canvas
                 setNeedsStyleRecalc(SyntheticStyleChange);
@@ -498,4 +513,93 @@ AffineTransform HTMLCanvasElement::baseTransform() const
     return m_imageBuffer->baseTransform() * transform;
 }
 
+#if defined(USE_CANVAS_LAYER)
+PlatformLayer* HTMLCanvasElement::platformLayer() const
+{
+    return m_canvasLayer;
+}
+
+// create texture from egl image
+bool HTMLCanvasElement::createTexture()
+{
+    if(m_graphicBuffer.get() == NULL) {
+        return false;
+    }
+
+    if(m_textureId != 0) {
+        return true;
+    }
+
+    // Create the EGLImageKHR from the native buffer
+    EGLint eglImgAttrs[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE, EGL_NONE };
+    m_eglImage = eglCreateImageKHR(
+                    eglGetCurrentDisplay(),
+                    EGL_NO_CONTEXT, //eglGetCurrentContext(),
+                    EGL_NATIVE_BUFFER_ANDROID,
+                    (EGLClientBuffer)m_graphicBuffer->getNativeBuffer(),
+                    eglImgAttrs);
+    if (m_eglImage == EGL_NO_IMAGE_KHR) {
+        android_printLog(ANDROID_LOG_ERROR, "WebKit", "HTMLCanvasElement: failed to create egl image\n");
+        return false;
+    }
+    else {
+        // Attach the EGLImage to whatever texture is bound to GL_TEXTURE_2D
+        // glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
+        // glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, m_eglImage);
+        glFinish();
+    }
+
+    glGenTextures(1, &m_textureId);
+
+    glBindTexture(GL_TEXTURE_2D, m_textureId);
+    glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, m_eglImage);
+
+//    GLUtils::createTextureFromEGLImage(m_textureId, m_eglImage);
+
+    return true;
+}
+
+
+void HTMLCanvasElement::deleteTexture()
+{
+    if(m_textureId != 0) {
+        glDeleteTextures(1, &m_textureId);
+        m_textureId = 0;
+    }
+
+    if (m_eglImage != EGL_NO_IMAGE_KHR) {
+        eglDestroyImageKHR(eglGetDisplay(EGL_DEFAULT_DISPLAY), m_eglImage);
+        m_eglImage = EGL_NO_IMAGE_KHR;
+    }
+}
+
+void HTMLCanvasElement::commitLayer()
+{
+    void* bits = NULL;
+    ImageBuffer *buf = buffer();
+
+    if(m_graphicBuffer.get() == NULL) {
+        m_graphicBuffer = new android::GraphicBuffer(
+            buf->width(),
+            buf->height(),
+            PIXEL_FORMAT_RGBA_8888, // FIXME!
+            GraphicBuffer::USAGE_SW_WRITE_OFTEN | GraphicBuffer::USAGE_HW_TEXTURE);
+    }
+
+    m_graphicBuffer->lock(GraphicBuffer::USAGE_SW_WRITE_OFTEN, &bits);
+
+    // copy to texture
+    if(/*!m_dirtyRect.isEmpty() && */ bits != NULL) {
+        buffer()->copyImageData(bits,
+            m_graphicBuffer->getStride()*4,
+            m_graphicBuffer->getWidth(),
+            m_graphicBuffer->getHeight()); // FIXME! RGBA8888
+
+        // invalidate view
+        m_context->invalidateView();
+    }
+
+    m_graphicBuffer->unlock();
+}
+#endif
 }

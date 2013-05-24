@@ -948,6 +948,15 @@ bool LayerAndroid::updateWithTree(LayerAndroid* newTree)
 #endif
 }
 
+#if defined(USE_CANVAS_LAYER)
+void LayerAndroid::commitLayer()
+{
+    int count = this->countChildren();
+    for (int i = 0; i < count; i++)
+        this->getChild(i)->commitLayer();
+}
+#endif
+
 // Return true to indicate to WebViewCore that the updates
 // are too complicated to be fully handled and we need a full
 // call to webkit (e.g. handle repaints)

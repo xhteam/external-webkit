@@ -268,6 +268,9 @@ struct WebViewCore::JavaGlue {
     jmethodID   m_scrollTo;
     jmethodID   m_contentDraw;
     jmethodID   m_layersDraw;
+#if defined(USE_CANVAS_LAYER)
+    jmethodID   m_layersCommit;
+#endif
     jmethodID   m_requestListBox;
     jmethodID   m_openFileChooser;
     jmethodID   m_requestSingleListBox;
@@ -402,6 +405,9 @@ WebViewCore::WebViewCore(JNIEnv* env, jobject javaWebViewCore, WebCore::Frame* m
     m_javaGlue->m_scrollTo = GetJMethod(env, clazz, "contentScrollTo", "(IIZZ)V");
     m_javaGlue->m_contentDraw = GetJMethod(env, clazz, "contentDraw", "()V");
     m_javaGlue->m_layersDraw = GetJMethod(env, clazz, "layersDraw", "()V");
+#if defined(USE_CANVAS_LAYER)
+    m_javaGlue->m_layersCommit = GetJMethod(env, clazz, "layersCommit", "()V");
+#endif
     m_javaGlue->m_requestListBox = GetJMethod(env, clazz, "requestListBox", "([Ljava/lang/String;[I[I)V");
     m_javaGlue->m_openFileChooser = GetJMethod(env, clazz, "openFileChooser", "(Ljava/lang/String;)Ljava/lang/String;");
     m_javaGlue->m_requestSingleListBox = GetJMethod(env, clazz, "requestListBox", "([Ljava/lang/String;[II)V");
@@ -891,6 +897,18 @@ bool WebViewCore::updateLayers(LayerAndroid* layers)
     return true;
 }
 
+#if defined(USE_CANVAS_LAYER)
+void WebViewCore::commitLayers()
+{
+    ChromeClientAndroid* chromeC = static_cast<ChromeClientAndroid*>(m_mainFrame->page()->chrome()->client());
+    GraphicsLayerAndroid* root = static_cast<GraphicsLayerAndroid*>(chromeC->layersSync());
+    if (root) {
+        LayerAndroid* updatedLayer = root->contentLayer();
+        updatedLayer->commitLayer();
+    }
+}
+#endif
+
 void WebViewCore::notifyAnimationStarted()
 {
     // We notify webkit that the animations have begun
@@ -1042,6 +1060,18 @@ void WebViewCore::layersDraw()
     env->CallVoidMethod(javaObject.get(), m_javaGlue->m_layersDraw);
     checkException(env);
 }
+
+#if defined(USE_CANVAS_LAYER)
+void WebViewCore::layersCommit()
+{
+    JNIEnv* env = JSC::Bindings::getJNIEnv();
+    AutoJObject javaObject = m_javaGlue->object(env);
+    if (!javaObject.get())
+        return;
+    env->CallVoidMethod(javaObject.get(), m_javaGlue->m_layersCommit);
+    checkException(env);
+}
+#endif
 
 void WebViewCore::contentInvalidate(const WebCore::IntRect &r)
 {
@@ -3951,6 +3981,14 @@ static void ClearContent(JNIEnv *env, jobject obj)
     viewImpl->clearContent();
 }
 
+#if defined(USE_CANVAS_LAYER)
+static void nativeCommitLayers(JNIEnv *env, jobject obj)
+{
+    WebViewCore* viewImpl = GET_NATIVE_VIEW(env, obj);
+    viewImpl->commitLayers();
+}
+#endif
+
 static void UpdateFrameCacheIfLoading(JNIEnv *env, jobject obj)
 {
     GET_NATIVE_VIEW(env, obj)->updateFrameCacheIfLoading();
@@ -4652,6 +4690,10 @@ static void ScrollRenderLayer(JNIEnv* env, jobject obj, jint layer, jobject jRec
 static JNINativeMethod gJavaWebViewCoreMethods[] = {
     { "nativeClearContent", "()V",
             (void*) ClearContent },
+#if defined(USE_CANVAS_LAYER)
+    { "nativeCommitLayers", "()V",
+        (void*) nativeCommitLayers } ,
+#endif
     { "nativeFocusBoundsChanged", "()Z",
         (void*) FocusBoundsChanged } ,
     { "nativeKey", "(IIIZZZZ)Z",

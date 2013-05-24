@@ -165,6 +165,13 @@ namespace android {
          */
         void layersDraw();
 
+#if defined(USE_CANVAS_LAYER)
+        /**
+         * commit the layers to the UI side
+         */
+        void layersCommit();
+#endif
+
 #if USE(ACCELERATED_COMPOSITING)
         GraphicsLayerAndroid* graphicsRootLayer() const;
 #endif
@@ -530,6 +537,11 @@ namespace android {
         BaseLayerAndroid* createBaseLayer(SkRegion*);
         bool updateLayers(LayerAndroid*);
         void notifyAnimationStarted();
+
+#if defined(USE_CANVAS_LAYER)
+        // commit layer content
+        void commitLayers();
+#endif
 
         int textWrapWidth() const { return m_textWrapWidth; }
         float scale() const { return m_scale; }
